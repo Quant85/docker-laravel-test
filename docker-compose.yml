@@ -1,0 +1,70 @@
+version: '3.8'
+
+# Servizi - è un elenco dei componenti dell'applicazione
+services: 
+
+# Nginx Service
+ nginx:
+  image: nginx:1.19-alpine # indica l'immagine da utilizzare
+  ports: 
+   - 80:80 #indica che vogliamo mappare la porta 80 sulla macchina locale, verremo inoltrati alla porta 80 del contenitore Nginx
+  volumes:
+   - ./src:/var/www/php
+   - ./.docker/nginx/conf.d:/etc/nginx/conf.d
+   - phpmyadmindata:/var/www/phpmyadmin
+  depends_on:
+   - php
+   - phpmyadmin
+# Servizio PHP
+ php:
+  build: ./.docker/php # invece di usare l'image useremo il buil che eseguirà il file Dockerfile presente nel percorso indicato, che creerà l'immagine
+  working_dir: /var/www/php # directori di lavoro, se faccio eseguire bash sul container PHP posso vedere il contenuto di questa directori che è quello in src (docker-compose ecec php bash)
+  volumes:
+   - ./src:/var/www/php # questa sezione permette di definire i 'volumi' ovvero directori o singoli file, che vogliamo montare sul container. Questo vuoldire che possiamo mappare directory e file locali su directory e file del container
+  depends_on:
+   mysql: # dichiariamo che il servizio mysql deve esser avviato prima di php
+    condition: service_healthy # ci permette di specificare a quale condizione il container è pronto. In questo caso non solo vogliamo avviare il contenitoe ma anche crare il database prima che il contenitore PHP tenti di accedervi, causando eventuali errori
+
+# MySQL Service
+ mysql:
+  image: mysql:8 # immagine ufficiale versione 8
+  environment: # contiene delle variabili d'ambiente che al momento della creazione del container verranno impostate su di esso
+   MYSQL_ROOT_PASSWORD: root # password del db demo
+   MYSQL_DATABASE: demo # nome database
+  volumes: # montiamo le directory collegate
+  - ./.docker/mysql/my.conf:/etc/mysql/conf.d/my.cnf # questo sarà usato per impostare il set di caratteri in utf8mb4_unicode_ci impostazione predefinita
+  - mysqldata:/var/lib/mysql
+  healthcheck:
+   test: mysqladmin ping -h 127.0.01 -u root --password=$$MYSQL_ROOT_PASSWORD
+   interval: 5s # poichè il controllo di integrità impostato con il condition, potrebbe non funzionare al primo avvio, abbiamo impostato un test che si ripeterà ogni 5 secondi per 10 volte
+   retries: 10 #
+# PhpMyAdmin Service
+ phpmyadmin:
+  image: phpmyadmin/phpmyadmin:5-fpm-alpine
+  environment:
+   PMA_HOST: mysql
+  volumes:
+   - phpmyadmindata:/var/www/html
+  depends_on:
+   mysql:
+    condition: service_healthy
+
+# Volumes
+volumes:
+
+ mysqldata: # senza questo volume, ogni qualvolta il contenitore mysql viene distrutto il database verrebbe distrutto con esso. Per renderlo persistente usiamo questo volume che memorizza i dati in locale
+
+ phpmyadmindata:
+
+
+
+
+
+
+
+
+
+
+
+
+
