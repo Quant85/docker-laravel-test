@@ -9,21 +9,21 @@ services:
   ports: 
    - 80:80 #indica che vogliamo mappare la porta 80 sulla macchina locale, verremo inoltrati alla porta 80 del contenitore Nginx
   volumes:
-   - ./src:/var/www/php
+   - ./src/backend:/var/www/backend
    - ./.docker/nginx/conf.d:/etc/nginx/conf.d
    - phpmyadmindata:/var/www/phpmyadmin
   depends_on:
-   - php
+   - backend
    - phpmyadmin
-# Servizio PHP
- php:
-  build: ./.docker/php # invece di usare l'image useremo il buil che eseguirà il file Dockerfile presente nel percorso indicato, che creerà l'immagine
-  working_dir: /var/www/php # directori di lavoro, se faccio eseguire bash sul container PHP posso vedere il contenuto di questa directori che è quello in src (docker-compose ecec php bash)
+# Servizio Backend
+ backend:
+  build: ./src/backend
+  working_dir: /var/www/backend
   volumes:
-   - ./src:/var/www/php # questa sezione permette di definire i 'volumi' ovvero directori o singoli file, che vogliamo montare sul container. Questo vuoldire che possiamo mappare directory e file locali su directory e file del container
+   - ./src/backend:/var/www/backend
   depends_on:
-   mysql: # dichiariamo che il servizio mysql deve esser avviato prima di php
-    condition: service_healthy # ci permette di specificare a quale condizione il container è pronto. In questo caso non solo vogliamo avviare il contenitoe ma anche crare il database prima che il contenitore PHP tenti di accedervi, causando eventuali errori
+   mysql: # dichiariamo che il servizio mysql deve esser avviato prima di backend
+    condition: service_healthy # ci permette di specificare a quale condizione il container è pronto. In questo caso non solo vogliamo avviare il contenitoe ma anche crare il database prima che il container backend tenti di accedervi, causando eventuali errori
 
 # MySQL Service
  mysql:
@@ -32,7 +32,7 @@ services:
    MYSQL_ROOT_PASSWORD: root # password del db demo
    MYSQL_DATABASE: demo # nome database
   volumes: # montiamo le directory collegate
-  - ./.docker/mysql/my.conf:/etc/mysql/conf.d/my.cnf # questo sarà usato per impostare il set di caratteri in utf8mb4_unicode_ci impostazione predefinita
+  - ./.docker/mysql/my.cnf:/etc/mysql/conf.d/my.cnf # questo sarà usato per impostare il set di caratteri in utf8mb4_unicode_ci impostazione predefinita
   - mysqldata:/var/lib/mysql
   healthcheck:
    test: mysqladmin ping -h 127.0.01 -u root --password=$$MYSQL_ROOT_PASSWORD
