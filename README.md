@@ -319,3 +319,217 @@ Ricostruiamo di nuovo l'immagine e riavviamo i container
     docker-compose build backend
     docker-compose up -d
 Dovremmo notare dei miglioramenti nella reattività del backend.
+
+## Frontend - Vue.Js
+
+Il terzo livello dell'applicazione è la parte frontend, per la quale verrà 
+usato [Vue.js](https://vuejs.org/).
+
+Cosi come per la parte backend, andiamo a configurare il servizio in `docker-compose.yml`
+
+    # Frontend Service
+    frontend:
+      build: ./src/frontend
+      working_dir: /var/www/frontend
+      volumes:
+        - ./src/frontend:/var/www/frontend
+      depends_on:
+        - backend
+
+Ed andremo ad aggiungere tra le dipendenze del servizio Nginx, il servizio frontend, in modo che venga avviato prima del server
+
+    # Nginx Service
+    nginx:
+      image: nginx:1.19-alpine
+      ports:
+        - 80:80
+      volumes:
+        - ./src/backend:/var/www/backend
+        - ./.docker/nginx/conf.d:/etc/nginx/conf.d
+        - phpmyadmindata:/var/www/phpmyadmin
+      depends_on:
+        - backend
+        - phpmyadmin
+        - frontend
+
+Quindi andremo a creare una nuova directory, `frontend` nella cartella `src`, `src/frontend`,
+ed al suo interno aggiungeremo il `Dockerfile`:
+
+    FROM node:15-alpine
+
+In questo modo adinamo ad estrarre la versione Alpine, dell'immagine ufficile di [Node.js](https://hub.docker.com/_/node), che viene fornita con [Yarn](https://yarnpkg.com/) e [npm](https://www.npmjs.com/),
+ che sono i gestori di pacchetti per Javascript.
+
+Andiamo a "costruire" l'immagine con:
+
+    docker-compose build frontend
+
+Ed una volta che l'immagine sarà pronta, andremo a creare un nuovo progetto Vue.js eseguendo l'istruzione:
+
+    docker-compose run --rm frontend sh -c "yarn global add @vue/cli && vue create tmp --default --force"
+
+Come fatto precedentemente, con `sh -c` eseguiremo più istruzioni, e ci permetterà di installare la 
+[Vue CLI](https://cli.vuejs.org/) a livello globale (`yarn global add @vue/cli`) e [creeremo un nuovo progetto Vue.js](https://cli.vuejs.org/guide/creating-a-project.html#vue-create) 
+con alcuni preset predefiniti nella directory `tmp` (`vue create tmp --default --force`)
+
+Questa directory è collocata sotto `var/www/frontend`, directory dichiarata nel container in `docker-compose.yml`
+
+Non installiamo la Vue CLI mediante Dokerfile, perchè ce ne serviremo solo per creare il progetto.
+
+Successivamente spostiamo i file furi da `tmp` alla directory principale:
+
+    docker-compose run --rm frontend sh -c "mv -n tmp/.* ./ && mv tmp/* ./ && rm -Rf tmp"
+
+Se si dovessero verificare problemi in merito ai permessi di scrittura, una possibile soluzione è entrare nella directori `src` e modificare i permessi della cartella `frontend` con:
+
+    sudo chown -R $USER:$USER frontend
+    
+Avendo precedentemente agginto `frontend.test` all' `host`, possiamo passare 
+direttamente alla configurazione del server Nginx.
+
+Aggiungeremo un nuovo file `frontend.conf` in `.docker/nginx/conf.d`:
+
+    server {
+      listen      80;
+      listen      [::]:80;
+      server_name frontend.test;
+      
+       location / {
+          proxy_pass         http://frontend:8080;
+          proxy_http_version 1.1;
+          proxy_set_header   Upgrade $http_upgrade;
+          proxy_set_header   Connection 'upgrade';
+          proxy_cache_bypass $http_upgrade;
+          proxy_set_header   Host $host;
+       }
+    }
+
+Questa configurazione reindirizza il traffico del dominio della porta 80, alla porta 8080 del container,
+ che è la porta che **Vue.js** usa per il server di sviluppo 
+([development server](https://cli.vuejs.org/guide/cli-service.html#using-the-binary)).
+
+[vedi anche...](https://medium.com/@robertz/nginx-vuejs-and-express-with-docker-4177cb506fbf)
+
+aggiungiamo anche un nuovo file `vue.config.js` in `src/frontend`:
+
+    module.exports = {
+        devServer: {
+           disableHostCheck: true,
+           sockHost: 'frontend.test',
+           watchOptions: {
+              ignored: /node_modules/,
+              aggregateTimeout: 300,
+              poll: 1000,
+           }
+        },
+    };
+
+In questo modo garinteremo il funzionamento dell' ***hot-reload***.
+ [Per ulteriori configurazioni...](https://cli.vuejs.org/config/#global-cli-config).
+
+Modifichiamo il `Dockerfile` in 
+
+
+    FROM node:15-alpine
+    
+    # Start application
+    CMD ["yarn", "serve"]
+
+Ricostruiamo l'immagine
+
+    docker-compose build frontend
+
+Ed avviamo il progetto, in modo che vengano eseguite le modifiche del Dokerfile
+    
+    docker-compose up -d
+
+Al termine, accedendo a [frontend.test](http://frontend.test/), dovremmo vedere la pagina di benvenuto di Vue.js
+
+Se ora sggiornassimo ad esempio aggiorna alcuni contenuti in
+`src/frontend/src/components/HelloWorld.vue`, (uno dei `<h3>` tag, ad esempio),
+tornando al tuo browser vedremmo il cambiamento in tempo reale: questo è grazie all'***hot-reload*** che fa la sua ***magia!***
+
+Se ora volessimo installare ad esempio il pacchetto [Axios](https://github.com/axios/axios),
+ grazie al compilatore **yarn** ci basterebbe eseguire l'istruzione:
+
+    docker-compose exec frontend yarn add axios
+
+Facciamo una prova con l'API inserita precedentemente nel container backend.
+ Qundi in `src/frontend/src/App.vue` :
+
+
+    <template>
+      <div id="app">
+        <HelloThere :msg="msg"/>
+      </div>
+    </template>
+    
+    <script>
+    import axios      from 'axios'
+    import HelloThere from './components/HelloThere.vue'
+    
+    export default {
+      name: 'App',
+      components: {
+        HelloThere
+      },
+      data () {
+        return {
+          msg: null
+        }
+      },
+      mounted () {
+        axios
+          .get('http://backend.test/api/hello-there')
+          .then(response => (this.msg = response.data))
+      }
+    }
+    </script>
+
+A questo punto possiamo eliminare il component `HelloWorld.vue`, e sostituirlo con 
+un nuovo component `HelloThere.vue`
+
+    < template >
+      < div >
+        < img  src = "https://tech.osteel.me/images/2020/03/04/hello.gif"  alt = "Hello there"  class = "center" >
+        < p > {{ msg}} </ p >
+      </ div >
+    </ template >
+    
+    < script >
+    esporta  predefinito  {
+    name :  'HelloThere' ,
+    props :  {
+    msg :  String
+    }
+    }
+    </ script >
+    
+    < stile >
+    p  {
+      font-family :  "Arial" ,  sans-serif ;
+      dimensione del carattere :  90 px ;
+      text-align :  center ;
+      spessore del carattere :  grassetto ;
+    }
+    
+    . center  {
+      display :  block ;
+      margine sinistro :  auto ;
+      margin-right :  auto ;
+      larghezza :  50 % ;
+    }
+    </ style >
+
+Ora tornando al browser, oltre all'immagine **Hello There**, in fondo dovrebbe esserci il contenuto dell' endpoint API,
+richiamato mediante la call axios.
+
+Istruzioni mentre il container è in esecuzione:
+
+    docker-compose exec frontend yarn
+
+Se non è in esecuzione
+
+    docker-compose run --rm frontend yarn
+
+Da tener presente che abbiamo usato `yarn`, tuttavia potremmo usare anche `npm`
