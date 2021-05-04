@@ -15,6 +15,7 @@ services:
   depends_on:
    - backend
    - phpmyadmin
+   - frontend
 # Servizio Backend
  backend:
   build: ./src/backend
@@ -24,6 +25,15 @@ services:
   depends_on:
    mysql: # dichiariamo che il servizio mysql deve esser avviato prima di backend
     condition: service_healthy # ci permette di specificare a quale condizione il container è pronto. In questo caso non solo vogliamo avviare il contenitoe ma anche crare il database prima che il container backend tenti di accedervi, causando eventuali errori
+
+#Servizio Frontend
+ frontend:
+  build: ./src/frontend
+  working_dir: /var/www/frontend
+  volumes:
+  - ./src/frontend:/var/www/frontend
+  depends_on:
+   - backend
 
 # MySQL Service
  mysql:
